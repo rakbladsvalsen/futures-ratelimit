@@ -1,0 +1,20 @@
+[package]
+name = "futures-ratelimit"
+version = "0.1.0"
+edition = "2021"
+description = "Bounded flavors of futures' FuturesUnordered and FuturesOrdered"
+license = "MIT"
+readme = "README.md"
+keywords = ["futures", "bounded", "rate", "asynchronous"]
+categories = ["asynchronous"]
+repository = "https://github.com/rakbladsvalsen/futures-ratelimited"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+futures = "0.3.29"
+pin-project = "1.1.3"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["full"] }
+tokio-test = "0.4.3"
