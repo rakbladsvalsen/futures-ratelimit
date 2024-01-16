@@ -8,7 +8,7 @@ use futures::stream::{FuturesUnordered, Stream};
 use futures::Future;
 use pin_project::pin_project;
 
-use crate::common::UnorderedPassthrough;
+use crate::common::Passthrough;
 
 /// Bounded FuturesUnordered from an iterator.
 ///
@@ -28,7 +28,7 @@ where
     max_concurrent: usize,
     tasks: T,
     #[pin]
-    pub running_tasks: FuturesUnordered<F>,
+    running_tasks: FuturesUnordered<F>,
 }
 
 /// Drop-in replacement for `FuturesUnordered`.
@@ -50,12 +50,14 @@ where
     running_tasks: FuturesUnordered<F>,
 }
 
-impl<T, F> UnorderedPassthrough<F> for FuturesUnorderedIter<T, F>
+impl<T, F> Passthrough<F> for FuturesUnorderedIter<T, F>
 where
     T: Iterator<Item = F>,
     F: Future,
 {
-    fn set_capacity(&mut self, max_concurrent: usize) {
+    type FuturesHolder = FuturesUnordered<F>;
+
+    fn set_max_concurrent(&mut self, max_concurrent: usize) {
         self.max_concurrent = max_concurrent;
     }
 
@@ -75,11 +77,13 @@ where
     }
 }
 
-impl<F> UnorderedPassthrough<F> for FuturesUnorderedBounded<F>
+impl<F> Passthrough<F> for FuturesUnorderedBounded<F>
 where
     F: Future,
 {
-    fn set_capacity(&mut self, max_concurrent: usize) {
+    type FuturesHolder = FuturesUnordered<F>;
+
+    fn set_max_concurrent(&mut self, max_concurrent: usize) {
         self.max_concurrent = max_concurrent;
     }
 
@@ -105,8 +109,8 @@ where
     F: Future,
 {
     type Item = F::Output;
-    /// Perform the same thing as `FuturesUnordered.poll_next()`,
-    /// except we only poll `max_concurrent` futures at a time.
+
+    /// Call the `poll()` method on the underlying `FuturesUnordered`.
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let mut this = self.project();
         match this.running_tasks.as_mut().poll_next(cx) {
@@ -131,8 +135,7 @@ where
 {
     type Item = F::Output;
 
-    /// We do the same thing here as in `FuturesUnorederedIter` , except
-    /// we pop new futures from the internal queue.
+    /// Calls the `poll()` method on the underlying `FuturesUnordered`.
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let mut this = self.project();
         match this.running_tasks.as_mut().poll_next(cx) {
@@ -156,7 +159,7 @@ where
     F: Future,
     T: Iterator<Item = F>,
 {
-    /// Creates a new rate-limited `FuturesUnordered` from an iterator.
+    /// Creates a new bounded `FuturesUnordered` from an iterator.
     /// This option is as efficient as it gets since it completely avoids
     /// allocating a new vector to store the excess of futures.
     ///
@@ -165,8 +168,8 @@ where
     ///
     /// Panics if `max_concurrent` is 0.
     /// ```rust
-    /// use futures_bounded::unordered::FuturesUnorderedIter;
-    /// use futures_bounded::common::UnorderedPassthrough;
+    /// use futures_ratelimit::unordered::FuturesUnorderedIter;
+    /// use futures_ratelimit::common::Passthrough;
     /// use futures::StreamExt;
     ///
     /// async fn dummy() -> u64{
@@ -175,20 +178,20 @@ where
     ///
     /// let tasks = (0..100).into_iter().map(|_| dummy());
     /// let mut fut_unordered = FuturesUnorderedIter::new(5, tasks);
+    ///
     /// // The internal FuturesUnorderedBounded will have 5 futures at most.
-    /// // All other remaining futures will be stored in the internal queue,
-    /// // and will be consumed as needed.
+    /// // The rest of futures will be pulled from the iterator as needed.
     ///
     /// tokio_test::block_on(async move{
-    ///     assert_eq!(fut_unordered.len_inner(), 5);
+    ///     assert_eq!(fut_unordered.borrow_inner().len(), 5);
     ///
     ///     while let Some(value) = fut_unordered.next().await {
     ///         println!("{}", value);
-    ///         assert!(fut_unordered.len_inner() <= 5);
+    ///         assert!(fut_unordered.borrow_inner().len() <= 5);
     ///     }
     ///
-    ///     assert_eq!(fut_unordered.len_inner(), 0);
-    ///     assert!(fut_unordered.is_empty_inner());
+    ///     assert_eq!(fut_unordered.borrow_inner().len(), 0);
+    ///     assert!(fut_unordered.borrow_inner().is_empty());
     ///
     /// });
     ///
@@ -215,13 +218,13 @@ impl<F> FuturesUnorderedBounded<F>
 where
     F: Future,
 {
-    /// Creates a new rate-limited `FuturesUnordered`. This struct
+    /// Creates a new bounded `FuturesUnordered`. This struct
     /// is 100% compatible with the normal `FuturesUnordered`.
     ///
     /// Panics if `max_concurrent` is 0.
     /// ```rust
-    /// use futures_bounded::unordered::FuturesUnorderedBounded;
-    /// use futures_bounded::common::UnorderedPassthrough;
+    /// use futures_ratelimit::unordered::FuturesUnorderedBounded;
+    /// use futures_ratelimit::common::Passthrough;
     /// use futures::StreamExt;
     ///
     /// async fn dummy() -> u64{
@@ -237,15 +240,15 @@ where
     /// // and will be consumed as needed.
     ///
     /// tokio_test::block_on(async move{
-    ///     assert_eq!(fut_unordered.len_inner(), 5);
+    ///     assert_eq!(fut_unordered.borrow_inner().len(), 5);
     ///
     ///     while let Some(value) = fut_unordered.next().await {
     ///         println!("{}", value);
-    ///         assert!(fut_unordered.len_inner() <= 5);
+    ///         assert!(fut_unordered.borrow_inner().len() <= 5);
     ///     }
     ///
-    ///     assert_eq!(fut_unordered.len_inner(), 0);
-    ///     assert!(fut_unordered.is_empty_inner());
+    ///     assert_eq!(fut_unordered.borrow_inner().len(), 0);
+    ///     assert!(fut_unordered.borrow_inner().is_empty());
     ///
     /// });
     ///
@@ -266,7 +269,7 @@ where
     /// internal queue, the excess of futures will be stored in another
     /// queue and will only get pulled as needed.
     pub fn push(&mut self, fut: F) {
-        match self.len_inner() < self.max_concurrent {
+        match self.borrow_inner().len() < self.max_concurrent {
             true => self.borrow_mut_inner().push(fut),
             false => self.queued_tasks.push(fut),
         }
@@ -342,7 +345,7 @@ mod tests {
             assert_eq!(result, counter);
             counter += 1;
             // Inner struct should always have less than `max_concurrent` futures.
-            assert!(fut_iter.len_inner() <= max_concurrent as usize);
+            assert!(fut_iter.borrow_inner().len() <= max_concurrent as usize);
         }
     }
 
@@ -359,16 +362,16 @@ mod tests {
         assert_eq!(fut_iter.len_queue(), 89); // we consumed 1 future
 
         // We should have 10 enqueued futures
-        assert_eq!(fut_iter.len_inner(), 10);
+        assert_eq!(fut_iter.borrow_inner().len(), 10);
         let _result = fut_iter.next().await;
         // 2 consumed futures at this point
         assert_eq!(fut_iter.len_queue(), 88);
         // We should (still) have 10 enqueued futures
-        assert_eq!(fut_iter.len_inner(), 10);
+        assert_eq!(fut_iter.borrow_inner().len(), 10);
         // Test clear queue
         fut_iter.clear_queue();
         assert_eq!(fut_iter.len_queue(), 0);
-        assert!(fut_iter.is_empty_inner());
+        assert!(fut_iter.borrow_inner().is_empty());
         assert_eq!(fut_iter.borrow_inner().len(), 0);
 
         let result = fut_iter.next().await;
@@ -378,14 +381,14 @@ mod tests {
             fut_iter.push(dummy(i as u64));
         }
         assert_eq!(fut_iter.len_queue(), 90);
-        assert_eq!(fut_iter.len_inner(), 10);
+        assert_eq!(fut_iter.borrow_inner().len(), 10);
 
         let result = fut_iter.next().await;
         assert!(result.is_some());
         // we consumed 1 future
         assert_eq!(fut_iter.len_queue(), 89);
         // We should have 10 enqueued futures
-        assert_eq!(fut_iter.len_inner(), 10);
+        assert_eq!(fut_iter.borrow_inner().len(), 10);
         // Test borrow* methods
         assert_eq!(fut_iter.borrow_queue().len(), 89);
         assert_eq!(fut_iter.borrow_mut_queue().len(), 89);
@@ -408,7 +411,7 @@ mod tests {
             max_so_far = cmp::max(max_so_far, max_res);
             // Don't consume all the futures - we want to change the limit at runtime
             if count > 10 {
-                fut_iter.set_capacity(20);
+                fut_iter.set_max_concurrent(20);
                 break;
             }
             count += 1;
@@ -430,7 +433,7 @@ mod tests {
         }
         assert_eq!(max_so_far, 10);
         // Change capacity
-        fut_iter.set_capacity(20);
+        fut_iter.set_max_concurrent(20);
         for _ in 0..50 {
             fut_iter.push(dummy_checked(Arc::clone(&test_value)));
         }
@@ -447,8 +450,8 @@ mod tests {
 
         let mut fut_iter = FuturesUnorderedIter::new(max_concurrent as usize, tasks);
 
-        assert_eq!(fut_iter.len_inner(), 10);
-        assert_eq!(fut_iter.is_empty_inner(), false);
+        assert_eq!(fut_iter.borrow_inner().len(), 10);
+        assert_eq!(fut_iter.borrow_inner().is_empty(), false);
         {
             let inner = fut_iter.borrow_inner();
             assert_eq!(inner.len(), 10);
@@ -458,12 +461,12 @@ mod tests {
             assert_eq!(inner.len(), 10);
         }
         // Bypass control mechanism
-        fut_iter.push_inner(dummy(123));
-        assert_eq!(fut_iter.len_inner(), 11);
+        fut_iter.borrow_mut_inner().push(dummy(123));
+        assert_eq!(fut_iter.borrow_inner().len(), 11);
 
         // Clear internal struct
-        fut_iter.clear_inner();
-        assert_eq!(fut_iter.len_inner(), 0);
+        fut_iter.borrow_mut_inner().clear();
+        assert_eq!(fut_iter.borrow_inner().len(), 0);
 
         let inner = fut_iter.into_inner();
         assert_eq!(inner.len(), 0);

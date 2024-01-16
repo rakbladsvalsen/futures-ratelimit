@@ -1,87 +1,33 @@
-use futures::stream::{FuturesOrdered, FuturesUnordered};
+//! Module containing traits used across most times.
+
 use futures::Future;
 
-pub trait UnorderedPassthrough<F>
+/// Provides common methods across unordered and ordered
+/// implementations.
+pub trait Passthrough<F>
 where
     F: Future,
 {
+    /// The type of the inner `Stream`. This can be either
+    /// `FuturesUnordered` or `FuturesOrdered`.
+    type FuturesHolder;
+
     /// Change the internal `max_concurrent` capacity at runtime.
     ///
-    /// **Note**: The new limit won't be applied until `poll_next()`
+    /// **IMPORTANT**: The new limit won't be applied until `poll_next()`
     /// method returns `Poll::Ready(T)`.
-    fn set_capacity(&mut self, max_concurrent: usize);
+    fn set_max_concurrent(&mut self, max_concurrent: usize);
 
-    /// Borrow the inner `FuturesUnordered`.
-    fn borrow_inner(&self) -> &FuturesUnordered<F>;
+    /// Borrow the inner `Stream`.
+    fn borrow_inner(&self) -> &Self::FuturesHolder;
 
-    /// Mutably borrow the inner `FuturesUnordered`.
+    /// Mutably borrow the inner `Stream`.
     /// Note that this library might not work reliably if you
-    /// modify the underlying `FuturesUnordered`.
-    fn borrow_mut_inner(&mut self) -> &mut FuturesUnordered<F>;
+    /// modify the underlying `Stream`.
+    fn borrow_mut_inner(&mut self) -> &mut Self::FuturesHolder;
 
-    /// Consume the `FuturesUnorderedIter` and return the
-    /// inner `FuturesUnordered`.
-    fn into_inner(self) -> FuturesUnordered<F>
+    /// Consume the iterator and return the inner `Stream`.
+    fn into_inner(self) -> Self::FuturesHolder
     where
         Self: Sized;
-
-    /// Convenience method for the inner `FuturesUnordered`.
-    fn len_inner(&self) -> usize {
-        self.borrow_inner().len()
-    }
-
-    /// Convenience  method for the inner `FuturesUnordered`.
-    fn is_empty_inner(&self) -> bool {
-        self.borrow_inner().is_empty()
-    }
-
-    /// Convenience method for the inner `FuturesUnordered`.
-    fn clear_inner(&mut self) {
-        self.borrow_mut_inner().clear();
-    }
-
-    /// Pass-through method for the inner `FuturesUnordered`.
-    ///
-    /// Warning: This method will add futures to the internal
-    /// `FuturesUnordered`, completely bypassing the `max_concurrent`
-    /// limit. You might as well use a vanilla `FuturesUnordered`
-    /// in that case.
-    fn push_inner(&mut self, future: F) {
-        self.borrow_mut_inner().push(future);
-    }
-}
-
-pub trait OrderedPassthrough<F>
-where
-    F: Future,
-{
-    /// Change the internal `max_concurrent` capacity at runtime.
-    ///
-    /// **Note**: The new limit won't be applied until `poll_next()`
-    /// method returns `Poll::Ready(T)`.
-    fn set_capacity(&mut self, max_concurrent: usize);
-
-    /// Borrow the inner `FuturesOrdered`.
-    fn borrow_inner(&self) -> &FuturesOrdered<F>;
-
-    /// Mutably borrow the inner `FuturesOrdered`.
-    /// Note that this library might not work reliably if you
-    /// modify the underlying `FuturesUnordered`.
-    fn borrow_mut_inner(&mut self) -> &mut FuturesOrdered<F>;
-
-    /// Consume the `FuturesOrderedIter` and return the
-    /// inner `FuturesOrdered`.
-    fn into_inner(self) -> FuturesOrdered<F>
-    where
-        Self: Sized;
-
-    /// Convenience method for the inner `FuturesOrdered`.
-    fn len_inner(&self) -> usize {
-        self.borrow_inner().len()
-    }
-
-    /// Convenience  method for the inner `FuturesOrdered`.
-    fn is_empty_inner(&self) -> bool {
-        self.borrow_inner().is_empty()
-    }
 }
