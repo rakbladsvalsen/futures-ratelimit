@@ -29,7 +29,7 @@ where
     max_concurrent: usize,
     tasks: I,
     #[pin]
-    pub running_tasks: FuturesOrdered<F>,
+    running_tasks: FuturesOrdered<F>,
 }
 
 /// Drop-in replacement for `FuturesOrdered`.
